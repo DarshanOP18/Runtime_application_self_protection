@@ -1,0 +1,43 @@
+# Secrets — NEVER commit these
+.env
+.env.local
+.env.production
+!.env.example
+*.jks
+*.keystore
+key.properties
+android/key.properties
+
+# Data files
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Build outputs
+build/outputs/
+build/debug-info/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+test-results.xml
+.mypy_cache/
+
+# Docker
+.docker/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

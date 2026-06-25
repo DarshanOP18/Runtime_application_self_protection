@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+RUN useradd -u 1001 -m appuser
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install watchfiles --no-cache-dir --user
+USER appuser
+ENV PATH=/home/appuser/.local/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    DEBUG=true \
+    LOG_LEVEL=DEBUG
+EXPOSE 8001
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload", "--reload-dir", "/app/app", "--log-level", "debug"]

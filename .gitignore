@@ -1,0 +1,52 @@
+# Secrets — NEVER commit these
+.env
+.env.local
+.env.production
+.env.development
+.env.staging
+*.jks
+*.keystore
+key.properties
+android/key.properties
+
+# Data files
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Build outputs
+build/
+build/outputs/
+build/debug-info/
+bin/
+obj/
+
+# Python virtual envs and caches
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+test-results.xml
+.mypy_cache/
+
+# Flutter & Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+*.g.dart
+*.freezed.dart
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

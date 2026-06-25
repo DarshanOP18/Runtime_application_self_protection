@@ -1,0 +1,40 @@
+services:
+  rasp-ai-backend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: rasp_ai_backend_dev
+    restart: "no"
+    ports:
+      - "0.0.0.0:8001:8001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - .:/app
+      - /app/__pycache__
+      - rasp_dev_data:/app/data
+      - rasp_dev_logs:/app/logs
+    env_file: .env
+    environment:
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: "1.0"
+    networks:
+      - rasp_dev_network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  rasp_dev_data:
+  rasp_dev_logs:
+
+networks:
+  rasp_dev_network:
+    driver: bridge

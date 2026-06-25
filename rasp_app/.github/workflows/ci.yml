@@ -1,0 +1,83 @@
+name: "Flutter App — CI"
+
+on:
+  push:
+    branches: [main, develop, "feature/**", "fix/**"]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: "Flutter Analyze"
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.22.0"
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze code
+        run: flutter analyze --no-pub --fatal-infos
+
+      - name: Check formatting
+        run: |
+          dart format --output=none \
+                      --set-exit-if-changed lib/
+
+  test:
+    name: "Flutter Tests"
+    runs-on: ubuntu-22.04
+    needs: analyze
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.22.0"
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Run tests with coverage
+        run: |
+          flutter test \
+            --coverage \
+            --reporter=compact \
+            --timeout=120s
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-coverage
+          path: coverage/lcov.info
+          retention-days: 14
+
+  docker-verify:
+    name: "Docker Builder Verification"
+    runs-on: ubuntu-22.04
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Verify builder image builds
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          dockerfile: Dockerfile.builder
+          push: false
+          tags: rasp-flutter-builder:ci-check
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

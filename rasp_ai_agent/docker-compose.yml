@@ -1,0 +1,52 @@
+services:
+  rasp-ai-backend:
+    build:
+      context: ./backend
+      dockerfile: ../Dockerfile
+      target: runtime
+    container_name: rasp_ai_backend_prod
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:8001:8001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - rasp_data:/app/data
+      - rasp_logs:/app/logs
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+        reservations:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/v1/security/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    networks:
+      - rasp_network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  rasp_data:
+    driver: local
+  rasp_logs:
+    driver: local
+
+networks:
+  rasp_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

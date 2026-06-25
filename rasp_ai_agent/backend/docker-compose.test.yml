@@ -1,0 +1,28 @@
+services:
+  rasp-ai-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: rasp_ai_test_runner
+    command: >
+      sh -c "pip install pytest pytest-asyncio
+             pytest-httpx pytest-cov --quiet --user &&
+             python -m pytest tests/ -v --tb=short
+             --cov=app --cov-report=xml
+             --junitxml=/app/test-results/results.xml"
+    volumes:
+      - .:/app
+      - test_results:/app/test-results
+    env_file: .env.example
+    environment:
+      - TESTING=true
+      - DATABASE_PATH=:memory:
+      - OLLAMA_BASE_URL=http://localhost:11434
+      - LOG_LEVEL=ERROR
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  test_results:

@@ -1,0 +1,31 @@
+services:
+  flutter-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.builder
+    container_name: rasp_flutter_builder
+    volumes:
+      - .:/app
+      - flutter_pub_cache:/home/flutteruser/.pub-cache
+      - ./build/outputs:/app/build/app/outputs/flutter-apk
+    environment:
+      - FLUTTER_ENV=production
+    command: >
+      sh -c "
+        flutter clean &&
+        flutter pub get &&
+        flutter build apk --release
+          --obfuscate
+          --split-debug-info=/app/build/debug-info &&
+        echo '✅ APK build complete' &&
+        ls -lh build/app/outputs/flutter-apk/
+      "
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
+
+volumes:
+  flutter_pub_cache:
+    driver: local

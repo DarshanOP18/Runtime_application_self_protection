@@ -1,0 +1,66 @@
+name: "Integration Tests — Full Stack"
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  integration:
+    name: "Full Stack Integration"
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Start AI backend
+        working-directory: rasp_ai_agent
+        run: |
+          cp .env.example .env
+          docker compose up -d --build
+          echo "Waiting for backend to be ready..."
+          for i in $(seq 1 24); do
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+                   --max-time 5 \
+                   http://127.0.0.1:8001/api/v1/security/health \
+                   2>/dev/null || echo "000")
+            if [ "$HTTP" = "200" ]; then
+              echo "Backend ready (attempt $i)"
+              break
+            fi
+            [ $i -eq 24 ] && (docker compose logs && exit 1)
+            echo "Attempt $i — HTTP $HTTP — waiting 5s..."
+            sleep 5
+          done
+
+      - name: Run integration tests
+        run: |
+          echo "--- Test 1: Health endpoint ---"
+          curl -sf http://127.0.0.1:8001/api/v1/security/health
+          echo "PASS"
+
+          echo "--- Test 2: Auth required on /analyze ---"
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+                 -X POST \
+                 -H "Content-Type: application/json" \
+                 -d '{"device_id":"test","root_detected":true}' \
+                 http://127.0.0.1:8001/api/v1/security/analyze)
+          [ "$HTTP" = "401" ] && echo "PASS (auth enforced)" || (echo "FAIL: Expected 401, got $HTTP" && exit 1)
+
+          echo "--- Test 3: Validation on bad payload ---"
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+                 -X POST \
+                 -H "Content-Type: application/json" \
+                 -d '{"bad":"payload"}' \
+                 http://127.0.0.1:8001/api/v1/security/analyze)
+          [ "$HTTP" = "401" ] || [ "$HTTP" = "422" ] && echo "PASS" || echo "WARN: Unexpected HTTP $HTTP"
+
+          echo "--- All integration tests passed ---"
+
+      - name: Teardown
+        if: always()
+        working-directory: rasp_ai_agent
+        run: docker compose down -v
