@@ -18,6 +18,7 @@ GET /dashboard/api/health     → Live health status for the status bar
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections import defaultdict
@@ -41,6 +42,24 @@ _STATIC = Path(__file__).resolve().parent.parent.parent / "static"
 # ── Runtime references injected by main.py ────────────────────────────
 _db_path: str | None = None
 _start_time: float = time.time()
+_table_columns_cache: dict[str, set[str]] = {}
+
+_THREAT_FLAG_COLUMNS: tuple[str, ...] = (
+    "root_detected",
+    "frida_detected",
+    "debugger_detected",
+    "emulator_detected",
+    "tamper_detected",
+    "vpn_detected",
+    "proxy_detected",
+    "overlay_detected",
+    "accessibility_abuse",
+    "hook_detected",
+    "location_spoof",
+    "time_spoof",
+    "malware_detected",
+    "screenshot_detected",
+)
 
 
 def set_dashboard_db(db_path: str) -> None:
@@ -110,6 +129,69 @@ async def _scalar(sql: str, params: tuple = (), default: Any = 0) -> Any:
     if rows:
         return list(rows[0].values())[0]
     return default
+
+
+async def _table_columns(table: str) -> set[str]:
+    """Return the set of column names for a table, cached per process."""
+    cached = _table_columns_cache.get(table)
+    if cached is not None:
+        return cached
+    rows = await _query(f"PRAGMA table_info({table})")
+    columns = {str(row["name"]) for row in rows if "name" in row}
+    _table_columns_cache[table] = columns
+    return columns
+
+
+def _active_threats_from_row(row: dict[str, Any]) -> list[str]:
+    """Build the active threat list from boolean flag columns."""
+    return [column for column in _THREAT_FLAG_COLUMNS if row.get(column)]
+
+
+async def _latest_threat_snapshot(device_id: str) -> dict[str, Any] | None:
+    """Fetch the latest threat row for a device in a schema-compatible way."""
+    columns = await _table_columns("threat_history")
+    select_cols = [
+        "risk_level",
+        "risk_score",
+        "created_at",
+    ]
+    if "llm_explanation" in columns:
+        select_cols.append("llm_explanation AS ai_explanation")
+    elif "ai_explanation" in columns:
+        select_cols.append("ai_explanation")
+    if "active_threats" in columns:
+        select_cols.append("active_threats")
+    else:
+        select_cols.extend(_THREAT_FLAG_COLUMNS)
+
+    rows = await _query(
+        f"""
+        SELECT {", ".join(select_cols)}
+        FROM threat_history
+        WHERE device_id = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        (device_id,),
+    )
+    if not rows:
+        return None
+
+    row = rows[0]
+    raw_active = row.get("active_threats")
+    if isinstance(raw_active, str):
+        try:
+            row["active_threats"] = json.loads(raw_active or "[]")
+        except json.JSONDecodeError:
+            row["active_threats"] = []
+    elif raw_active is None:
+        row["active_threats"] = _active_threats_from_row(row)
+    else:
+        row["active_threats"] = list(raw_active) if isinstance(raw_active, list) else _active_threats_from_row(row)
+
+    if not row.get("ai_explanation"):
+        row["ai_explanation"] = ""
+    return row
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -214,22 +296,55 @@ async def get_recent_threats(limit: int = 50, offset: int = 0) -> JSONResponse:
         List of threat event records.
     """
     limit = min(limit, 200)
-    rows = await _query(
-        """
-        SELECT
-            id,
-            device_id,
-            risk_level,
-            risk_score,
-            active_threats,
-            ai_explanation,
-            created_at
-        FROM threat_history
-        ORDER BY created_at DESC
-        LIMIT ? OFFSET ?
-        """,
-        (limit, offset),
-    )
+    columns = await _table_columns("threat_history")
+    if "active_threats" in columns:
+        rows = await _query(
+            """
+            SELECT
+                id,
+                device_id,
+                risk_level,
+                risk_score,
+                active_threats,
+                llm_explanation AS ai_explanation,
+                threat_summary,
+                created_at
+            FROM threat_history
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        )
+    else:
+        rows = await _query(
+            f"""
+            SELECT
+                id,
+                device_id,
+                risk_level,
+                risk_score,
+                llm_explanation AS ai_explanation,
+                threat_summary,
+                created_at,
+                {", ".join(_THREAT_FLAG_COLUMNS)}
+            FROM threat_history
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        )
+
+    for row in rows:
+        raw_active = row.get("active_threats")
+        if isinstance(raw_active, str):
+            try:
+                row["active_threats"] = json.loads(raw_active or "[]")
+            except json.JSONDecodeError:
+                row["active_threats"] = []
+        else:
+            row["active_threats"] = _active_threats_from_row(row)
+        row["ai_explanation"] = row.get("ai_explanation") or ""
+
     return JSONResponse({"threats": rows, "limit": limit, "offset": offset})
 
 
@@ -250,16 +365,38 @@ async def get_devices() -> JSONResponse:
         """
         SELECT
             device_id,
-            total_scans,
-            high_risk_count,
-            last_risk_level,
-            last_risk_score,
-            last_seen
-        FROM device_security_profiles
-        ORDER BY last_seen DESC
+            total_threat_events AS total_scans,
+            highest_risk_ever,
+            is_blocked,
+            block_reason,
+            trusted,
+            last_seen_at AS last_seen
+        FROM device_security_profile
+        ORDER BY last_seen_at DESC
         LIMIT 100
         """
     )
+
+    for row in rows:
+        latest = await _latest_threat_snapshot(row["device_id"])
+        if latest:
+            row["last_risk_level"] = latest.get("risk_level", row.get("highest_risk_ever", "LOW"))
+            row["last_risk_score"] = latest.get("risk_score", 0)
+            row["last_active_threats"] = latest.get("active_threats", [])
+            row["last_seen"] = latest.get("created_at", row.get("last_seen"))
+        else:
+            row["last_risk_level"] = row.get("highest_risk_ever", "LOW")
+            row["last_risk_score"] = 0
+            row["last_active_threats"] = []
+        row["high_risk_count"] = await _scalar(
+            """
+            SELECT COUNT(*)
+            FROM threat_history
+            WHERE device_id = ?
+              AND risk_level IN ('HIGH', 'CRITICAL')
+            """,
+            (row["device_id"],),
+        )
     return JSONResponse({"devices": rows})
 
 
@@ -338,17 +475,28 @@ async def get_threat_types() -> JSONResponse:
     """
     import json
 
-    rows = await _query(
-        "SELECT active_threats FROM threat_history WHERE active_threats IS NOT NULL"
-    )
+    columns = await _table_columns("threat_history")
     tally: dict[str, int] = defaultdict(int)
-    for row in rows:
-        try:
-            threats = json.loads(row["active_threats"] or "[]")
-            for t in threats:
-                tally[t] += 1
-        except (json.JSONDecodeError, TypeError):
-            continue
+
+    if "active_threats" in columns:
+        rows = await _query(
+            "SELECT active_threats FROM threat_history WHERE active_threats IS NOT NULL"
+        )
+        for row in rows:
+            try:
+                threats = json.loads(row["active_threats"] or "[]")
+                for t in threats:
+                    tally[t] += 1
+            except (json.JSONDecodeError, TypeError):
+                continue
+    else:
+        rows = await _query(
+            f"SELECT {', '.join(_THREAT_FLAG_COLUMNS)} FROM threat_history"
+        )
+        for row in rows:
+            for column in _THREAT_FLAG_COLUMNS:
+                if row.get(column):
+                    tally[column] += 1
 
     sorted_threats = sorted(
         [{"threat": k, "count": v} for k, v in tally.items()],

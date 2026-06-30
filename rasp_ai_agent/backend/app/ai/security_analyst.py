@@ -13,6 +13,7 @@ guides remediation.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
@@ -156,6 +157,8 @@ _TOPIC_CONTEXT: dict[str, str] = {
         "data by using proxy tools like mitmproxy or Charles Proxy."
     ),
 }
+
+_CHAT_TIMEOUT_SECONDS = 60.0
 
 # ═══════════════════════════════════════════════════════════════════════
 # Threat-specific fallback data
@@ -374,14 +377,20 @@ class SecurityAnalystAI:
             prompt = f"{extra_context}\n\nUser question: {question}"
 
         try:
-            return await self.llm.generate(
-                prompt=prompt,
-                system=_SYSTEM_SECURITY_EDUCATOR,
-                temperature=0.4,
-                max_tokens=512,
+            return await asyncio.wait_for(
+                self.llm.generate(
+                    prompt=prompt,
+                    system=_SYSTEM_SECURITY_EDUCATOR,
+                    temperature=0.35,
+                    max_tokens=192,
+                ),
+                timeout=_CHAT_TIMEOUT_SECONDS,
             )
         except LocalLLMUnavailableError:
             logger.warning("Local LLM unavailable — using rule-based chat response")
+            return self._rule_based_answer(question)
+        except asyncio.TimeoutError:
+            logger.warning("Local LLM chat timed out — using rule-based chat response")
             return self._rule_based_answer(question)
         except Exception as exc:
             logger.error("Error during LLM chat: %s", exc, exc_info=True)
@@ -469,22 +478,6 @@ class SecurityAnalystAI:
         list[str]
             Three follow-up questions the user might ask next.
         """
-        try:
-            prompt = (
-                f"Based on this security Q&A, suggest exactly 3 brief follow-up questions "
-                f"the user might ask next.\n\n"
-                f"User asked: {user_message}\n"
-                f"AI answered: {ai_response[:300]}\n\n"
-                f'Respond with a JSON array of 3 strings. Example: ["Q1?","Q2?","Q3?"]\n'
-                f"Respond ONLY with valid JSON. No markdown."
-            )
-            raw = await self.llm.generate(prompt=prompt, system=_SYSTEM_SECURITY_EDUCATOR, temperature=0.5, max_tokens=256)
-            parsed = self._parse_json_response(raw)
-            if isinstance(parsed, list) and len(parsed) >= 3:
-                return [str(q) for q in parsed[:3]]
-        except Exception:
-            pass
-
         return [
             "How can I protect my device from this threat?",
             "What are the signs of a compromised device?",

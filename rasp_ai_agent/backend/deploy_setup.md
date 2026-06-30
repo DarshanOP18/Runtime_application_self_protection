@@ -1,14 +1,14 @@
 # Server Deployment Setup Guide (Git Push-to-Deploy)
 
-This guide shows you how to set up the server (`10.166.170.103`) so you can push your local backend code directly using `git push` and have it automatically build and start in Docker.
+This guide shows you how to set up the server (`10.200.10.155`) so you can push your local backend code directly using `git push` and have it automatically build and start in Docker.
 
 ---
 
-## 1. Setup on Remote Server (`10.166.170.103`)
+## 1. Setup on Remote Server (`10.200.10.155`)
 
 Login to your server using SSH (e.g. user `soc`):
 ```bash
-ssh soc@10.166.170.103
+ssh soc@10.200.10.155
 ```
 
 ### A. Install Docker and Git (if not already installed)
@@ -23,7 +23,7 @@ sudo usermod -aG docker $USER
 
 # Log out and log back in for changes to take effect:
 exit
-ssh soc@10.166.170.103
+ssh soc@10.200.10.155
 ```
 
 ### B. Create target deployment directory
@@ -112,9 +112,9 @@ git init
 ```
 
 ### B. Add Remote Server Reference
-Add the remote destination (`server`) pointing to your bare git repo on `10.166.170.103`:
+Add the remote destination (`server`) pointing to your bare git repo on `10.200.10.155`:
 ```bash
-git remote add server ssh://soc@10.166.170.103/home/soc/rasp_ai_agent.git
+git remote add server ssh://soc@10.200.10.155/home/soc/rasp_ai_agent.git
 ```
 
 ### C. Commit Your Changes
@@ -131,13 +131,13 @@ git push server main
 ```
 
 This will trigger the `post-receive` hook on the server, which checks out the code to `~/rasp_ai_agent`, runs the container, and starts your RASP AI backend at:
-**`http://10.166.170.103:8001`**
+**`http://10.200.10.155:8001`**
 
 ---
 
 ## 4. Verification and URLs
 
 Once deployed, you can access the dashboard and API at:
-* **API Documentation (Swagger UI)**: `http://10.166.170.103:8001/docs`
-* **Real-time Security Dashboard**: `http://10.166.170.103:8001/dashboard/`
-* **Health Endpoint**: `http://10.166.170.103:8001/api/v1/security/health`
+* **API Documentation (Swagger UI)**: `http://10.200.10.155:8001/docs`
+* **Real-time Security Dashboard**: `http://10.200.10.155:8001/dashboard/`
+* **Health Endpoint**: `http://10.200.10.155:8001/api/v1/security/health`

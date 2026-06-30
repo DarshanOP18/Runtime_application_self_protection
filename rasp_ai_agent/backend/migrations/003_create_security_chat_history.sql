@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS security_chat_history (
     message         TEXT NOT NULL,
     token_count     INTEGER DEFAULT 0,
     created_at      TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    FOREIGN KEY (user_id) REFERENCES dashboard_users(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_chat_session_id
