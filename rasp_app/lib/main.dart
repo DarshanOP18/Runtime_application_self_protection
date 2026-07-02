@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'rasp/rasp_check_model.dart';
@@ -5,8 +6,20 @@ import 'rasp/rasp_service.dart';
 import 'screens/auth_gate.dart';
 import 'screens/blocked_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await _bootstrapFirebase();
   runApp(const MyApp());
+}
+
+Future<void> _bootstrapFirebase() async {
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp();
+    }
+  } catch (_) {
+    // Firestore reporting is optional; continue without Firebase.
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -65,7 +78,18 @@ class MyApp extends StatelessWidget {
 }
 
 class RaspGate extends StatefulWidget {
-  const RaspGate({super.key});
+  final Future<RaspCheckResult> Function()? checkRunner;
+  final WidgetBuilder? authGateBuilder;
+  final Widget Function(String reason, VoidCallback onRetry)? blockedBuilder;
+  final WidgetBuilder? deceptionBuilder;
+
+  const RaspGate({
+    super.key,
+    this.checkRunner,
+    this.authGateBuilder,
+    this.blockedBuilder,
+    this.deceptionBuilder,
+  });
 
   @override
   State<RaspGate> createState() => _RaspGateState();
@@ -109,7 +133,7 @@ class _RaspGateState extends State<RaspGate> with WidgetsBindingObserver {
 
   void _runChecks() {
     setState(() {
-      _checksFuture = RaspService.runChecks();
+      _checksFuture = (widget.checkRunner ?? RaspService.runChecks)();
     });
   }
 
@@ -151,17 +175,18 @@ class _RaspGateState extends State<RaspGate> with WidgetsBindingObserver {
         final result = snapshot.data!;
 
         if (result.shouldShowDeception) {
-          return _buildDeceptiveScreen();
+          return widget.deceptionBuilder?.call(context) ?? _buildDeceptiveScreen();
         }
 
         if (result.shouldBlockApp) {
-          return BlockedScreen(
-            reason: result.threatSummary,
-            onRetry: _runChecks,
-          );
+          return widget.blockedBuilder?.call(result.threatSummary, _runChecks) ??
+              BlockedScreen(
+                reason: result.threatSummary,
+                onRetry: _runChecks,
+              );
         }
 
-        return const AuthGate();
+        return widget.authGateBuilder?.call(context) ?? const AuthGate();
       },
     );
   }

@@ -60,7 +60,6 @@ class AgentApiService {
         receiveTimeout: const Duration(seconds: 30),
         headers: <String, dynamic>{
           'Content-Type': 'application/json',
-          AgentConfig.apiKeyHeader: AgentConfig.apiKey,
         },
       ),
     );

@@ -32,19 +32,19 @@ ollama run qwen2.5:7b "reply with ok"
 ## Backend Setup
 
 ```bash
-cd D:\DarshanProject\rasp_ai_agent\backend
+cd D:\DarshanProject\RASP\rasp_ai_agent\backend
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
 python -m app.database.migrate
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
 The API is available at:
 
-- Swagger UI: `http://localhost:8000/docs`
-- Health: `http://localhost:8000/api/v1/security/health`
+- Swagger UI: `http://localhost:8001/docs`
+- Health: `http://localhost:8001/api/v1/security/health`
 
 Expected health fields include:
 
@@ -66,7 +66,7 @@ If Ollama is not running or the model is not available, the backend still works 
 Analyze a threat payload:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/security/analyze ^
+curl -X POST http://localhost:8001/api/v1/security/analyze ^
   -H "Content-Type: application/json" ^
   -d "{\"device_id\":\"TEST001\",\"root_detected\":true,\"frida_detected\":true}"
 ```
@@ -74,7 +74,7 @@ curl -X POST http://localhost:8000/api/v1/security/analyze ^
 Ask the security chat:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/security/chat ^
+curl -X POST http://localhost:8001/api/v1/security/chat ^
   -H "Content-Type: application/json" ^
   -d "{\"message\":\"What is Frida?\",\"session_id\":\"sess_abc123\"}"
 ```
@@ -82,7 +82,7 @@ curl -X POST http://localhost:8000/api/v1/security/chat ^
 Fetch threat history:
 
 ```bash
-curl http://localhost:8000/api/v1/security/history/TEST001
+curl http://localhost:8001/api/v1/security/history/TEST001
 ```
 
 ## Flutter App Connection
@@ -90,16 +90,18 @@ curl http://localhost:8000/api/v1/security/history/TEST001
 Your Flutter app path is:
 
 ```text
-D:\DarshanProject\jarvis_v2_complete\RASP\rasp_app
+D:\DarshanProject\RASP\rasp_app
 ```
 
 Point the app to this backend server URL. If the app runs on a physical device, use your computer's LAN IP instead of `localhost`, for example:
 
 ```text
-http://192.168.1.10:8000/api/v1
+http://192.168.1.10:8001/api/v1
 ```
 
 No `X-API-Key` header is needed.
+
+If you are using tenant routing, send an `X-Tenant-ID` header with a safe tenant slug such as `master`, `tenant_a`, or `demo-01`.
 
 ## Configuration
 

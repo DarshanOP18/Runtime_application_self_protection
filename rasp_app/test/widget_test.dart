@@ -1,30 +1,62 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:rasp_app/main.dart';
+import 'package:rasp_app/rasp/rasp_check_model.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('RaspGate shows auth flow when checks pass', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RaspGate(
+          checkRunner: () async => const RaspCheckResult(
+            isRooted: false,
+            isEmulator: false,
+            isDebugging: false,
+            isTampered: false,
+            isBlockingEnforced: true,
+          ),
+          authGateBuilder: (_) => const Text('auth-ready'),
+        ),
+      ),
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await tester.pumpAndSettle();
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+    expect(find.text('auth-ready'), findsOneWidget);
+  });
+
+  testWidgets('RaspGate blocks when enforced checks find a threat', (WidgetTester tester) async {
+    var retryCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RaspGate(
+          checkRunner: () async => const RaspCheckResult(
+            isRooted: true,
+            isEmulator: false,
+            isDebugging: false,
+            isTampered: false,
+            isBlockingEnforced: true,
+          ),
+          blockedBuilder: (reason, onRetry) => TextButton(
+            onPressed: () {
+              retryCount++;
+              onRetry();
+            },
+            child: Text(reason),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rooted/Jailbroken Device'), findsOneWidget);
+
+    await tester.tap(find.text('Rooted/Jailbroken Device'));
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(retryCount, 1);
   });
 }

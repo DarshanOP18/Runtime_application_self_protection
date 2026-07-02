@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -86,7 +87,33 @@ class DatabaseManager:
                 await self._shared_conn.execute("PRAGMA foreign_keys=ON")
             return self._shared_conn
 
-        conn = await aiosqlite.connect(self._db_path)
+        from app.database.context import get_tenant_context
+        tenant_id = get_tenant_context()
+
+        if tenant_id == "master":
+            db_path = self._db_path
+        else:
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", tenant_id):
+                raise ValueError("Invalid tenant identifier")
+            db_dir = os.path.dirname(self._db_path) or "./data"
+            db_path = os.path.join(db_dir, f"tenant_{tenant_id}.db")
+            if not os.path.exists(db_path):
+                # Run migrations on the new tenant database file on first access
+                logger.info("Initializing new tenant database: %s", db_path)
+                tenant_db = DatabaseManager(db_path=db_path, migrations_dir=self._migrations_dir)
+                await tenant_db.run_migrations()
+
+        conn = await aiosqlite.connect(db_path)
+        conn.row_factory = aiosqlite.Row
+        await conn.execute("PRAGMA journal_mode=WAL")
+        await conn.execute("PRAGMA foreign_keys=ON")
+        return conn
+
+    async def _get_direct_connection(self, db_path: str) -> aiosqlite.Connection:
+        """Get direct connection to a specific database path, bypassing tenant context routing."""
+        if self._is_memory:
+            return await self.get_connection()
+        conn = await aiosqlite.connect(db_path)
         conn.row_factory = aiosqlite.Row
         await conn.execute("PRAGMA journal_mode=WAL")
         await conn.execute("PRAGMA foreign_keys=ON")
@@ -135,7 +162,7 @@ class DatabaseManager:
             logger.warning("Migrations directory not found: %s", self._migrations_dir)
             return []
 
-        conn = await self.get_connection()
+        conn = await self._get_direct_connection(self._db_path)
         try:
             # Create tracking table if it doesn't exist
             await conn.execute(

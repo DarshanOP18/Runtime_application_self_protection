@@ -26,11 +26,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import aiosqlite
 from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import get_settings
+from app.database.connection import DatabaseManager
 
 logger = logging.getLogger("rasp.dashboard")
 
@@ -101,11 +101,14 @@ async def _query(sql: str, params: tuple = ()) -> list[dict[str, Any]]:
     """
     if not _db_path:
         raise HTTPException(status_code=503, detail="Database not initialised yet.")
-    async with aiosqlite.connect(_db_path) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(sql, params) as cursor:
+    db_manager = DatabaseManager(db_path=_db_path)
+    conn = await db_manager.get_connection()
+    try:
+        async with conn.execute(sql, params) as cursor:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
+    finally:
+        await db_manager._release(conn)
 
 
 async def _scalar(sql: str, params: tuple = (), default: Any = 0) -> Any:
@@ -445,8 +448,12 @@ async def dashboard_health() -> JSONResponse:
     db_ok = False
     try:
         if _db_path:
-            async with aiosqlite.connect(_db_path) as db:
-                await db.execute("SELECT 1")
+            db_manager = DatabaseManager(db_path=_db_path)
+            conn = await db_manager.get_connection()
+            try:
+                await conn.execute("SELECT 1")
+            finally:
+                await db_manager._release(conn)
             db_ok = True
     except Exception:
         db_ok = False

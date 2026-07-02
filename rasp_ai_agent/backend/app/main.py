@@ -21,18 +21,20 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.ai.local_llm_client import local_llm_client
 from app.ai.security_analyst import SecurityAnalystAI
-from app.api.auth_router import router as auth_router
+from app.api.auth_router import router as auth_router, set_auth_db
 from app.api.dashboard_router import router as dashboard_router, set_dashboard_db
 from app.api.incidents_router import router as incidents_router
 from app.api.notifications_router import router as notifications_router
 from app.api.rbac_router import router as rbac_router
 from app.api.security_router import router as security_router, set_dependencies
 from app.config import get_settings
+from app.database.context import reset_tenant_context, set_tenant_context
 from app.database.connection import DatabaseManager
 from app.threat_engine.scorer import ThreatScorer
 from app.utils.logger import setup_logging
@@ -66,6 +68,7 @@ async def lifespan(app: FastAPI):
 
     # 4. Dependency injection
     set_dependencies(db=db, llm=local_llm_client, analyst=analyst, scorer=scorer)
+    set_auth_db(db)
     set_dashboard_db(settings.DATABASE_PATH)
 
     # 5. LLM health check
@@ -84,6 +87,14 @@ async def lifespan(app: FastAPI):
         logger.info("bcrypt OK — dashboard auth ready")
     except Exception as e:
         logger.warning("bcrypt not available: %s — install passlib[bcrypt]", e)
+
+    # 7. Cryptographic vault check
+    try:
+        from app.utils.crypto import load_or_create_vault_key
+        load_or_create_vault_key()
+        logger.info("Cryptographic master vault key loaded successfully")
+    except Exception as e:
+        logger.error("Failed to load or create vault key: %s", e)
 
     logger.info("Dashboard: http://0.0.0.0:%s/dashboard", 8001)
     logger.info("RASP Security AI Backend ready")
@@ -132,6 +143,22 @@ def create_app() -> FastAPI:
     )
 
     # ── Request-ID middleware ─────────────────────────────────────────────
+    @application.middleware("http")
+    async def tenant_context_middleware(request: Request, call_next) -> Response:
+        tenant_header = request.headers.get("X-Tenant-ID", "master")
+        try:
+            token = set_tenant_context(tenant_header)
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Invalid tenant identifier"},
+            )
+
+        try:
+            return await call_next(request)
+        finally:
+            reset_tenant_context(token)
+
     @application.middleware("http")
     async def request_id_middleware(request: Request, call_next) -> Response:
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))

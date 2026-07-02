@@ -1,8 +1,8 @@
+import '../services/backend_config.dart';
+
 class AgentConfig {
   // Backend connection
-  static const String baseUrl = 'http://10.126.166.208:8001/api/v1';
-  static const String apiKey = 'rasp_secure_api_key_for_local_dev';
-  static const String apiKeyHeader = 'X-API-Key';
+  static const String baseUrl = BackendConfig.securityApiBaseUrl;
 
   // Bot personality
   static const String botName = 'RASP Shield AI';

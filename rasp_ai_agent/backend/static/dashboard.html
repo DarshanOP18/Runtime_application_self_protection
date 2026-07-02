@@ -656,6 +656,19 @@
         Sign In
       </button>
     </form>
+    <form id="mfa-form" onsubmit="return false;" style="display:none;">
+      <div class="form-group">
+        <label for="inp-mfa-code">MFA Verification Code</label>
+        <input type="text" id="inp-mfa-code" placeholder="Enter 6-digit or backup code" autocomplete="one-time-code" />
+      </div>
+      <button type="submit" class="btn-primary" id="mfa-btn" onclick="doMfaLogin()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Verify Code
+      </button>
+      <button type="button" class="btn-primary" style="margin-top:10px;background:none;border:1px solid var(--border);color:var(--text-dim)" onclick="cancelMfa()">
+        Cancel
+      </button>
+    </form>
     <div class="login-footer">
       <div>Protected by RASP Shield SDK</div>
       <div style="margin-top:4px">© 2026 Shield Security</div>
@@ -892,6 +905,7 @@ const STATE = {
   filters: {},
   autoRefresh: true,
   editUserId: null,
+  intermediateToken: null,
 };
 
 const API = '';  // relative URLs — works on any host
@@ -986,6 +1000,15 @@ async function doLogin() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Login failed');
 
+    if (data.status === 'MFA_REQUIRED') {
+      STATE.intermediateToken = data.intermediate_token;
+      id('login-form').style.display = 'none';
+      id('mfa-form').style.display = 'block';
+      id('inp-mfa-code').value = '';
+      id('inp-mfa-code').focus();
+      return;
+    }
+
     STATE.token = data.token;
     STATE.user  = data.user;
     sessionStorage.setItem('rasp_token', data.token);
@@ -999,6 +1022,54 @@ async function doLogin() {
     btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg> Sign In';
   }
 }
+
+async function doMfaLogin() {
+  const btn = id('mfa-btn');
+  const errBox = id('login-error');
+  const code = id('inp-mfa-code').value.trim();
+  if (!code) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Verifying…';
+  errBox.style.display = 'none';
+
+  try {
+    const res = await fetch(API + '/auth/mfa/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intermediate_token: STATE.intermediateToken, code }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Verification failed');
+
+    STATE.token = data.token;
+    STATE.user  = data.user;
+    STATE.intermediateToken = null;
+    sessionStorage.setItem('rasp_token', data.token);
+    sessionStorage.setItem('rasp_user', JSON.stringify(data.user));
+
+    id('mfa-form').style.display = 'none';
+    id('login-form').style.display = 'block';
+    id('inp-mfa-code').value = '';
+
+    showApp();
+  } catch(e) {
+    id('login-error-text').textContent = e.message;
+    errBox.style.display = 'flex';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> Verify Code';
+  }
+}
+
+function cancelMfa() {
+  STATE.intermediateToken = null;
+  id('mfa-form').style.display = 'none';
+  id('login-form').style.display = 'block';
+  id('login-error').style.display = 'none';
+  id('inp-mfa-code').value = '';
+}
+
 
 async function doLogout() {
   if (STATE.token) {
@@ -1339,16 +1410,16 @@ function initTimelineChart(data, stats) {
   const chart = new Chart(ctx, {
     type:'line',
     data: { labels: hours, datasets: [
-      { label:'All Threats', data:all, borderColor:'var(--primary)', backgroundColor:'rgba(0,212,255,.08)', fill:true, tension:.4, pointRadius:0 },
-      { label:'Critical', data:crit, borderColor:'var(--critical)', backgroundColor:'transparent', fill:false, tension:.4, pointRadius:0 },
-      { label:'High', data:high, borderColor:'var(--warning)', backgroundColor:'transparent', fill:false, tension:.4, pointRadius:0 },
+      { label:'All Threats', data:all, borderColor:'#00D4FF', backgroundColor:'rgba(0,212,255,.08)', fill:true, tension:.4, pointRadius:0 },
+      { label:'Critical', data:crit, borderColor:'#FF1744', backgroundColor:'transparent', fill:false, tension:.4, pointRadius:0 },
+      { label:'High', data:high, borderColor:'#F59E0B', backgroundColor:'transparent', fill:false, tension:.4, pointRadius:0 },
     ]},
     options: {
       responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ labels:{ color:'var(--text-muted)', boxWidth:12, font:{size:11} } } },
+      plugins:{ legend:{ labels:{ color:'#94A3B8', boxWidth:12, font:{size:11} } } },
       scales:{
-        x:{ grid:{color:'rgba(27,45,79,.8)'}, ticks:{color:'var(--text-muted)',font:{size:10}, maxTicksLimit:8} },
-        y:{ grid:{color:'rgba(27,45,79,.8)'}, ticks:{color:'var(--text-muted)',font:{size:10}}, beginAtZero:true },
+        x:{ grid:{color:'rgba(27,45,79,.8)'}, ticks:{color:'#94A3B8',font:{size:10}, maxTicksLimit:8} },
+        y:{ grid:{color:'rgba(27,45,79,.8)'}, ticks:{color:'#94A3B8',font:{size:10}}, beginAtZero:true },
       },
     },
   });
@@ -1363,14 +1434,14 @@ function initDonutChart(stats) {
     data: {
       labels:['Low','Medium','High','Critical'],
       datasets:[{ data:[stats.low_count||0,stats.medium_count||0,stats.high_count||0,stats.critical_count||0],
-        backgroundColor:['#10B981','#F59E0B','#FF7043','#EF4444'],
+        backgroundColor:['#10B981','#F59E0B','#FF7043','#FF1744'],
         borderWidth:0, hoverOffset:4 }],
     },
     options:{
       responsive:true, maintainAspectRatio:true,
       cutout:'70%',
       plugins:{
-        legend:{ position:'bottom', labels:{ color:'var(--text-muted)', boxWidth:10, font:{size:10} } },
+        legend:{ position:'bottom', labels:{ color:'#94A3B8', boxWidth:10, font:{size:10} } },
         tooltip:{ callbacks:{ label: ctx=>`${ctx.label}: ${ctx.parsed}` } },
       },
     },
@@ -1532,10 +1603,10 @@ async function renderAnalytics() {
       type:'bar',
       data:{ labels:['LOW (0-49)','MEDIUM (50-99)','HIGH (100-149)','CRITICAL (150+)'],
         datasets:[{data:[stats.low_count||0,stats.medium_count||0,stats.high_count||0,stats.critical_count||0],
-          backgroundColor:['#10B981','#F59E0B','#FF7043','#EF4444'],borderRadius:6}]},
+          backgroundColor:['#10B981','#F59E0B','#FF7043','#FF1744'],borderRadius:6}]},
       options:{ responsive:true,plugins:{legend:{display:false}},
-        scales:{ x:{grid:{color:'rgba(27,45,79,.8)'},ticks:{color:'var(--text-muted)',font:{size:11}}},
-          y:{grid:{color:'rgba(27,45,79,.8)'},ticks:{color:'var(--text-muted)'},beginAtZero:true} } },
+        scales:{ x:{grid:{color:'rgba(27,45,79,.8)'},ticks:{color:'#94A3B8',font:{size:11}}},
+          y:{grid:{color:'rgba(27,45,79,.8)'},ticks:{color:'#94A3B8'},beginAtZero:true} } },
     });
   }
 
@@ -1555,12 +1626,12 @@ async function renderAnalytics() {
     STATE.charts['line'] = new Chart(lCtx, {
       type:'line',
       data:{ labels:hours, datasets:[
-        {label:'All',data:all,borderColor:'var(--primary)',backgroundColor:'rgba(0,212,255,.06)',fill:true,tension:.4,pointRadius:0},
-        {label:'Critical',data:crit,borderColor:'var(--critical)',fill:false,tension:.4,pointRadius:0},
+        {label:'All',data:all,borderColor:'#00D4FF',backgroundColor:'rgba(0,212,255,.06)',fill:true,tension:.4,pointRadius:0},
+        {label:'Critical',data:crit,borderColor:'#FF1744',fill:false,tension:.4,pointRadius:0},
       ]},
-      options:{responsive:true,plugins:{legend:{labels:{color:'var(--text-muted)',boxWidth:10,font:{size:10}}}},
-        scales:{x:{grid:{color:'rgba(27,45,79,.8)'},ticks:{color:'var(--text-muted)',font:{size:10},maxTicksLimit:8}},
-          y:{grid:{color:'rgba(27,45,79,.8)'},ticks:{color:'var(--text-muted)'},beginAtZero:true}}},
+      options:{responsive:true,plugins:{legend:{labels:{color:'#94A3B8',boxWidth:10,font:{size:10}}}},
+        scales:{x:{grid:{color:'rgba(27,45,79,.8)'},ticks:{color:'#94A3B8',font:{size:10},maxTicksLimit:8}},
+          y:{grid:{color:'rgba(27,45,79,.8)'},ticks:{color:'#94A3B8'},beginAtZero:true}}},
     });
   }
   if (typeof feather !== 'undefined') feather.replace();
@@ -1897,11 +1968,11 @@ async function renderFraud() {
       data:{
         labels:fraudTypes,
         datasets:[{data:fraudTypes.map(()=>Math.floor(Math.random()*cases.length+1)||0),
-          backgroundColor:'rgba(245,158,11,.6)',borderColor:'var(--warning)',borderWidth:1,borderRadius:4}],
+          backgroundColor:'rgba(245,158,11,.6)',borderColor:'#F59E0B',borderWidth:1,borderRadius:4}],
       },
       options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},
-        scales:{x:{grid:{color:'rgba(27,45,79,.8)'},ticks:{color:'var(--text-muted)'}},
-          y:{grid:{display:false},ticks:{color:'var(--text-muted)',font:{size:11}}}}}
+        scales:{x:{grid:{color:'rgba(27,45,79,.8)'},ticks:{color:'#94A3B8'}},
+          y:{grid:{display:false},ticks:{color:'#94A3B8',font:{size:11}}}}}
     });
   }
   if (typeof feather !== 'undefined') feather.replace();

@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'dart:io';
 
@@ -7,9 +9,11 @@ class ThreatReporterService {
   /// Silently sends threat data to Firestore
   static Future<void> reportThreat(String threatSummary) async {
     try {
-      // Check if Firebase is initialized. 
-      // TODO: add google-services.json to enable Firebase properly
-      
+      final firebaseReady = await _ensureFirebaseReady();
+      if (!firebaseReady) {
+        return;
+      }
+
       final deviceInfo = DeviceInfoPlugin();
       String deviceId = 'unknown';
       if (Platform.isAndroid) {
@@ -30,16 +34,26 @@ class ThreatReporterService {
         "platform": Platform.isAndroid ? "android" : "ios"
       };
 
-      // Silently attempt to send to Firestore
-      // Using a try-catch inside to avoid crashing the app if Firebase is not setup
+      // Firestore is best-effort telemetry. Fail closed by doing nothing.
       try {
         await FirebaseFirestore.instance.collection('rasp_threats').add(data);
       } catch (e) {
-        // Firebase probably not initialized or no network
-        print('Threat report failed (Firebase): $e');
+        debugPrint('Threat report failed (Firebase): $e');
       }
     } catch (e) {
-      print('Threat report failed: $e');
+      debugPrint('Threat report failed: $e');
+    }
+  }
+
+  static Future<bool> _ensureFirebaseReady() async {
+    try {
+      if (Firebase.apps.isNotEmpty) {
+        return true;
+      }
+      await Firebase.initializeApp();
+      return Firebase.apps.isNotEmpty;
+    } catch (_) {
+      return false;
     }
   }
 }
